@@ -2,22 +2,6 @@
 
 End-to-end pipeline for predicting aqueous lipophilicity (logD) from SMILES strings using graph neural networks and molecular fingerprints.
 
-## Requirements
-
-- Python 3.12
-- [uv](https://docs.astral.sh/uv/) package manager
-- CUDA-capable GPU recommended (falls back to CPU automatically)
-
-## Setup
-
-```bash
-git clone <repo-url>
-cd logd-predictor
-uv sync
-```
-
-`uv sync` reads `pyproject.toml`, creates `.venv/`, and installs all dependencies including PyTorch, RDKit, and Lightning.
-
 ## Data
 
 Pre-split CSVs are expected under `data/processed/splits/` with `canonical_smiles` and `cx_logd` columns. To build from scratch:
