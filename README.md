@@ -23,22 +23,6 @@ uv run python train.py --multirun                             # Optuna sweep via
 Available models: `attentive_fp`, `gcn`, `random_forest`
 Available featurizers: `mol_graph_conv` (default), `circular`, `rdkit`
 
-## Experiment tracking
-
-```bash
-uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
-```
-
-Then open [http://localhost:5000](http://localhost:5000).
-
-## Tests
-
-```bash
-uv run pytest
-```
-
-63 tests cover featurization, model forward passes, dataset collation, and training utilities. No GPU or data files required.
-
 ## Project layout
 
 ```
