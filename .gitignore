@@ -1,0 +1,28 @@
+# data and artifacts
+data/
+artifacts/
+multirun/
+
+# databases
+*.db
+
+# profiling
+profiler_output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.claude/
+dist/
+build/
+
+# Hydra outputs
+outputs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# env
+.env
