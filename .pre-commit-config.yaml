@@ -17,14 +17,13 @@ repos:
     hooks:
     -   id: flake8
 -   repo: https://github.com/compilerla/conventional-pre-commit
-    rev: 'v4.3.0'
+    rev: 'v4.4.0'
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
         args: []
 -   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.0
+    rev: v0.15.11
     hooks:
-      - id: ruff
-        args: [ --fix ]
+      - id: ruff-check
       - id: ruff-format

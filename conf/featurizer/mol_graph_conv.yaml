@@ -1,0 +1,3 @@
+featurizer_type: MolGraphConv
+use_edges: true
+use_chirality: false

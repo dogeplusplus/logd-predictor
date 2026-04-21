@@ -1,0 +1,28 @@
+defaults:
+  - featurizer: mol_graph_conv
+  - model: attentive_fp
+  - eval: default
+  - override hydra/sweeper: optuna   # Optuna TPE - only active with --multirun
+  - _self_
+
+split_dir: data/processed/splits
+smiles_col: canonical_smiles
+target_col: cx_logd
+
+mlflow:
+  experiment_name: logd-predictor
+
+hydra:
+  sweeper:
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 42
+    direction: minimize
+    n_trials: 20
+    n_jobs: 1
+    params:
+      model.learning_rate: tag(log, interval(1e-4, 1e-2))
+      model.dropout: interval(0.1, 0.5)
+      model.num_layers: range(1, 4)
+      model.graph_feat_size: choice(64, 128, 200, 256)
+      model.batch_size: choice(128, 256, 512)

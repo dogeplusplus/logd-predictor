@@ -1,0 +1,3 @@
+featurizer_type: CircularFingerprint
+radius: 2
+fp_size: 2048

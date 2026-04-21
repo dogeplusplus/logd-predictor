@@ -1,0 +1,10 @@
+model_type: RandomForest
+epochs: 0
+learning_rate: 0.0
+batch_size: 0
+num_layers: 0
+num_timesteps: 0
+graph_feat_size: 0
+dropout: 0.0
+n_estimators: 100
+model_dir: artifacts/model
