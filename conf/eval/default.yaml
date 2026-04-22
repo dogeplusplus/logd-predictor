@@ -4,4 +4,4 @@ metrics:
   - rmse
   - r2
 output_path: artifacts/ml_metrics.json
-log_every_n_epochs: 10
+log_every_n_epochs: 1

@@ -19,6 +19,7 @@ from sklearn.ensemble import RandomForestRegressor
 from logd_predictor._io import console
 from logd_predictor.configs import EvalConfig, ModelConfig, ModelType
 from logd_predictor.datasets import FingerprintDataset, MoleculeDataModule
+from logd_predictor.tui_callback import TUICallback
 from logd_predictor.featurize import (
     GRAPH_EDGE_DIM,
     GRAPH_NODE_DIM,
@@ -38,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 torch.set_float32_matmul_precision("high")
 
+# Keyed by (featurizer_type, radius, fp_size, use_edges, split_dir).
+# Keeps dataset tensors and persistent DataLoader workers alive across trials
+# so the 15 GB dataset is only loaded once per featurizer configuration.
+_dm_cache: dict[tuple, "MoleculeDataModule"] = {}
+
 
 class LitRegressor(L.LightningModule):
     def __init__(self, net: nn.Module, lr: float = 1e-3) -> None:
@@ -51,6 +57,19 @@ class LitRegressor(L.LightningModule):
         self.test_mae = torchmetrics.MeanAbsoluteError()
         self.test_rmse = torchmetrics.MeanSquaredError(squared=False)
         self.test_r2 = torchmetrics.R2Score()
+
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        x, y = batch
+        if isinstance(x, BatchedGraph):
+            x = BatchedGraph(
+                node_features=x.node_features.to(device, non_blocking=True),
+                edge_features=x.edge_features.to(device, non_blocking=True),
+                edge_index=x.edge_index.to(device, non_blocking=True),
+                batch=x.batch.to(device, non_blocking=True),
+            )
+        else:
+            x = x.to(device, non_blocking=True)
+        return x, y.to(device, non_blocking=True)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -100,6 +119,36 @@ class LitRegressor(L.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
 
+def _get_or_create_dm(
+    dataset_dirs: dict[str, str],
+    feat_cfg: FeaturizerConfig,
+    batch_size: int,
+    split_dir: str,
+) -> "MoleculeDataModule":
+    key = (
+        feat_cfg.featurizer_type,
+        feat_cfg.radius,
+        feat_cfg.fp_size,
+        feat_cfg.use_edges,
+        split_dir,
+    )
+    if key in _dm_cache:
+        logger.info("Reusing cached DataModule — skipping dataset reload")
+        dm = _dm_cache[key]
+        dm.batch_size = batch_size
+        return dm
+    dm = MoleculeDataModule(
+        dataset_dirs=dataset_dirs,
+        featurizer_type=feat_cfg.featurizer_type,
+        batch_size=batch_size,
+    )
+    logger.info("Loading datasets into memory (train ~15 GB, may take ~60 s)…")
+    dm.setup()
+    logger.info("Datasets loaded — starting training")
+    _dm_cache[key] = dm
+    return dm
+
+
 def build_lit_model(model_cfg: ModelConfig, feat_cfg: FeaturizerConfig) -> LitRegressor:
     if feat_cfg.featurizer_type == FeaturizerType.MOL_GRAPH_CONV:
         edge_dim = GRAPH_EDGE_DIM if feat_cfg.use_edges else 0
@@ -133,6 +182,55 @@ def build_lit_model(model_cfg: ModelConfig, feat_cfg: FeaturizerConfig) -> LitRe
             dropout=model_cfg.dropout,
         )
     return LitRegressor(net, lr=model_cfg.learning_rate)
+
+
+def save_model_bundle(
+    lit: LitRegressor,
+    model_cfg: ModelConfig,
+    feat_cfg: FeaturizerConfig,
+    metrics: dict[str, float],
+    bundle_dir: Path,
+) -> None:
+    """Save a self-contained inference bundle: weights + config + metadata.
+
+    The bundle can be loaded for cold-start inference without the Hydra
+    run-directory or any Lightning / training dependencies:
+
+        config = json.load(open("bundle/config.json"))
+        lit = build_lit_model(ModelConfig(**config["model"]),
+                              FeaturizerConfig(**config["featurizer"]))
+        lit.net.load_state_dict(torch.load("bundle/weights.pt"))
+        lit.eval()
+    """
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    # Unwrap torch.compile wrapper if present so we save the raw state dict.
+    net = lit.net
+    if hasattr(net, "_orig_mod"):
+        net = net._orig_mod
+    torch.save(net.state_dict(), bundle_dir / "weights.pt")
+
+    (bundle_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "model": json.loads(model_cfg.model_dump_json()),
+                "featurizer": json.loads(feat_cfg.model_dump_json()),
+            },
+            indent=2,
+        )
+    )
+
+    (bundle_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                **metrics,
+                "model_type": model_cfg.model_type.value,
+                "featurizer_type": feat_cfg.featurizer_type.value,
+            },
+            indent=2,
+        )
+    )
+    logger.info("Model bundle saved → %s", bundle_dir)
 
 
 def compute_metrics(
@@ -210,11 +308,23 @@ def _log_dataset_metadata(dataset_dirs: dict[str, str]) -> None:
             mlflow.log_param(f"n_{split}", meta.get("n_mols", "?"))
 
 
-def run_trial(cfg: DictConfig, trial_number: int | None = None) -> float:
+def run_trial(
+    cfg: DictConfig,
+    trial_number: int | None = None,
+    output_dir: Path | None = None,
+    tui_app=None,
+    total_trials: int = 0,
+) -> float:
     """Run one training trial inside an active MLflow run. Returns best val MAE."""
     feat_cfg = FeaturizerConfig(**OmegaConf.to_container(cfg.featurizer, resolve=True))
     model_cfg = ModelConfig(**OmegaConf.to_container(cfg.model, resolve=True))
     eval_cfg = EvalConfig(**OmegaConf.to_container(cfg.eval, resolve=True))
+
+    if output_dir is not None:
+        model_cfg = model_cfg.model_copy(update={"model_dir": output_dir / "model"})
+        eval_cfg = eval_cfg.model_copy(
+            update={"output_path": output_dir / "ml_metrics.json"}
+        )
 
     mlflow.log_params(OmegaConf.to_container(cfg.model, resolve=True))
     mlflow.log_params(
@@ -252,12 +362,12 @@ def run_trial(cfg: DictConfig, trial_number: int | None = None) -> float:
                 mlflow.log_metric(f"{split}_{metric}", float(value))
         mlflow.log_metric("val_mae", best_val_mae)
     else:
-        dm = MoleculeDataModule(
+        dm = _get_or_create_dm(
             dataset_dirs=dataset_dirs,
-            featurizer_type=feat_cfg.featurizer_type,
+            feat_cfg=feat_cfg,
             batch_size=model_cfg.batch_size,
+            split_dir=cfg.split_dir,
         )
-        dm.setup()
 
         ckpt_cb = ModelCheckpoint(
             dirpath=str(model_cfg.model_dir),
@@ -273,17 +383,30 @@ def run_trial(cfg: DictConfig, trial_number: int | None = None) -> float:
                     monitor="val_mae", patience=model_cfg.patience, mode="min"
                 )
             )
+        if tui_app is not None:
+            callbacks.append(TUICallback(tui_app, trial_number or 1, total_trials))
+
+        lit = build_lit_model(model_cfg, feat_cfg)
+        # if torch.cuda.is_available():
+        #     try:
+        #         lit.net = torch.compile(
+        #             lit.net, dynamic=True, mode="reduce-overhead"
+        #         )
+        #     except Exception as exc:
+        #         logger.warning("torch.compile failed (%s) — running eager", exc)
 
         L.Trainer(
             max_epochs=model_cfg.epochs,
             callbacks=callbacks,
             check_val_every_n_epoch=eval_cfg.log_every_n_epochs,
-            enable_progress_bar=False,
+            enable_progress_bar=tui_app is None,
             enable_model_summary=False,
             logger=False,
             accelerator="auto",
-            devices=1,
-        ).fit(build_lit_model(model_cfg, feat_cfg), datamodule=dm)
+            devices=torch.cuda.device_count(),
+            precision=model_cfg.precision,
+            strategy="ddp",
+        ).fit(lit, datamodule=dm)
 
         best_val_mae = float(ckpt_cb.best_model_score or float("inf"))
         mlflow.log_metric("best_val_mae", best_val_mae)
@@ -330,5 +453,13 @@ def run_trial(cfg: DictConfig, trial_number: int | None = None) -> float:
     mlflow.log_artifact(str(eval_cfg.output_path))
     if Path(str(model_cfg.model_dir)).exists():
         mlflow.log_artifacts(str(model_cfg.model_dir), artifact_path="model")
+
+    # Save a self-contained bundle alongside the checkpoint so inference
+    # works from a cold start without the Hydra run-directory structure.
+    if model_cfg.model_type != ModelType.RANDOM_FOREST and "lit" in dir():
+        bundle_dir = model_cfg.model_dir / "bundle"
+        val_metrics = results.get("validation", {})
+        save_model_bundle(lit, model_cfg, feat_cfg, val_metrics, bundle_dir)
+        mlflow.log_artifacts(str(bundle_dir), artifact_path="model/bundle")
 
     return best_val_mae

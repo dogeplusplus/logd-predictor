@@ -1,7 +1,7 @@
 model_type: GCN
-epochs: 50
+epochs: 20
 learning_rate: 1e-3
-batch_size: 256
+batch_size: 8192
 num_layers: 2
 num_timesteps: 2
 graph_feat_size: 200

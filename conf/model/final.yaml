@@ -1,0 +1,13 @@
+# Best hyperparameters from Optuna sweep (trial 3, val_mae=0.214, val_r2=0.981)
+# Extended for a full convergence run: 100 epochs, patience=15
+model_type: AttentiveFP
+epochs: 100
+learning_rate: 0.0007309539835912913
+batch_size: 8192
+num_layers: 3
+num_timesteps: 2
+graph_feat_size: 256
+dropout: 0.21649165607921678
+n_estimators: 100
+model_dir: artifacts/model
+patience: 15

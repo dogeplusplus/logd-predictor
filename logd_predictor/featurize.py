@@ -1,6 +1,7 @@
 import concurrent.futures
 import json
 import logging
+import multiprocessing
 import os
 from enum import Enum
 from functools import partial
@@ -171,7 +172,15 @@ CHUNK_SIZE = 2048
 def _run_parallel(chunks: list[list[str]], fn, progress: Progress, task_id) -> list:
     ordered: list = [None] * len(chunks)
     n_workers = min(os.cpu_count() or 1, len(chunks))
-    with concurrent.futures.ProcessPoolExecutor(max_workers=n_workers) as ex:
+    # Use forkserver instead of the default fork start method.  fork copies the
+    # parent's address space including any locks held by background threads
+    # (e.g. the Textual asyncio event loop), causing workers to deadlock.
+    # forkserver spawns a clean helper process before threads exist, so workers
+    # are uncontaminated.
+    ctx = multiprocessing.get_context("forkserver")
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=n_workers, mp_context=ctx
+    ) as ex:
         futures = {ex.submit(fn, chunk): i for i, chunk in enumerate(chunks)}
         for fut in concurrent.futures.as_completed(futures):
             ordered[futures[fut]] = fut.result()

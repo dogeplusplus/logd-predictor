@@ -24,6 +24,7 @@ class ModelConfig(BaseModel):
     n_estimators: int = 100
     model_dir: Path = Path("artifacts/model")
     patience: int = 5
+    precision: str = "bf16-mixed"
 
     model_config = {"arbitrary_types_allowed": True}
 

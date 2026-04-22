@@ -123,7 +123,9 @@ class MoleculeDataModule(L.LightningDataModule):
                     else FingerprintDataset(self.dataset_dirs[split], max_samples=lim)
                 )
 
-    def _loader(self, split: str, shuffle: bool = False) -> DataLoader:
+    def _loader(
+        self, split: str, shuffle: bool = False, drop_last: bool = False
+    ) -> DataLoader:
         return DataLoader(
             self._datasets[split],
             batch_size=self.batch_size,
@@ -133,10 +135,11 @@ class MoleculeDataModule(L.LightningDataModule):
             persistent_workers=self.num_workers > 0,
             prefetch_factor=4 if self.num_workers > 0 else None,
             collate_fn=GraphDataset.collate if self.is_graph else None,
+            drop_last=drop_last,
         )
 
     def train_dataloader(self) -> DataLoader:
-        return self._loader("train", shuffle=True)
+        return self._loader("train", shuffle=True, drop_last=True)
 
     def val_dataloader(self) -> DataLoader:
         return self._loader("validation")

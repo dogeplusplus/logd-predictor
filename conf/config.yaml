@@ -25,4 +25,4 @@ hydra:
       model.dropout: interval(0.1, 0.5)
       model.num_layers: range(1, 4)
       model.graph_feat_size: choice(64, 128, 200, 256)
-      model.batch_size: choice(128, 256, 512)
+      model.batch_size: choice(4096, 8192)
