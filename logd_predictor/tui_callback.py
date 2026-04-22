@@ -1,7 +1,3 @@
-"""Lightning callback that drives the Textual TUI during training."""
-
-from __future__ import annotations
-
 import time
 from collections import deque
 from typing import TYPE_CHECKING
@@ -16,7 +12,7 @@ _BPS_WINDOW = 50  # rolling window for batches/s average
 
 
 class TUICallback(L.Callback):
-    def __init__(self, app: TrainingApp, trial_num: int, total_trials: int) -> None:
+    def __init__(self, app: "TrainingApp", trial_num: int, total_trials: int) -> None:
         self._app = app
         self._trial_num = trial_num
         self._total_trials = total_trials

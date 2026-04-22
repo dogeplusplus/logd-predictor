@@ -1,25 +1,3 @@
-"""Entry points for data preparation pipelines.
-
-Two sources are supported:
-
-  openadmet (default)
-    Loads curated ChEMBL LogD data from the OpenADMET intake catalog
-    (https://github.com/OpenADMET/data-catalogs).  Requires ``intake``
-    and ``s3fs``: pip install intake s3fs
-
-  chembl
-    Downloads the full ChEMBL SQLite database and extracts logD records
-    directly.  Slower and requires more disk space, but gives access to
-    the raw measurement metadata.
-
-Called via:
-    uv run chembl-logd-pipeline                  # OpenADMET (default)
-    uv run chembl-logd-pipeline --source chembl  # raw ChEMBL download
-    uv run chembl-logd-pipeline --min-assays 3   # require ≥3 assays/compound
-"""
-
-from __future__ import annotations
-
 import argparse
 import logging
 

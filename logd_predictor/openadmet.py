@@ -1,25 +1,3 @@
-"""Load curated LogD data from the OpenADMET intake data catalog.
-
-The OpenADMET project (https://openadmet.org) publishes curated ADMET datasets
-as Parquet files on S3, accessible via intake catalog YAML files.
-
-Two datasets are available:
-  LogD_aggregated  — 23 k unique molecules; per-compound mean / median / std
-                     across all ChEMBL assays.  Best choice for training.
-  LogD_raw         — 26 k individual measurements; useful when you want per-
-                     assay provenance or to study measurement variance.
-
-Reference catalog:
-  https://github.com/OpenADMET/data-catalogs
-
-Column mapping used throughout this package:
-  OPENADMET_CANONICAL_SMILES → canonical_smiles
-  standard_value_mean        → cx_logd   (aggregated dataset)
-  standard_value             → cx_logd   (raw dataset)
-"""
-
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 
